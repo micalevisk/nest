@@ -3,6 +3,10 @@ name: "\U0001F525 Suggestion for Improving Performance"
 description: "I have a suggestion that might improve the performance of Nest \U00002728"
 labels: ["type: enhancement :wolf:", "needs triage"]
 body:
+  - type: markdown
+    attributes:
+      value: "Make sure you are reporting on the **right repository**! There are others [here](https://github.com/orgs/nestjs/repositories) for `@nestjs/*` packages."
+
   - type: checkboxes
     attributes:
       label: "Is there an existing issue that is already proposing this?"

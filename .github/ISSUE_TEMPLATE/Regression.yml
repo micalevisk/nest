@@ -18,6 +18,10 @@ body:
 
         ---
 
+  - type: markdown
+    attributes:
+      value: "Make sure you are reporting on the **right repository**! There are others [here](https://github.com/orgs/nestjs/repositories) for `@nestjs/*` packages."
+
   - type: checkboxes
     attributes:
       label: "Did you read the migration guide?"
