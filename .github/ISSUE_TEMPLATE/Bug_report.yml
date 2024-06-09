@@ -8,10 +8,10 @@ body:
         > [!IMPORTANT]
         > We use GitHub Issues to track bug reports, feature requests and regressions only!
         > If you are not sure that your issue is a bug, you could:
-        > - read the [FAQ's common errors](https://docs.nestjs.com/faq/common-errors) page
-        > - use our [Discord community](https://discord.gg/NestJS)
-        > - use [StackOverflow using the tag `nestjs`](https://stackoverflow.com/questions/tagged/nestjs)
-        > - If it's just a quick question you can ping [our Twitter](https://twitter.com/nestframework)
+        >   - read the [FAQ's common errors](https://docs.nestjs.com/faq/common-errors) page
+        >   - use our [Discord community](https://discord.gg/NestJS)
+        >   - use [StackOverflow using the tag `nestjs`](https://stackoverflow.com/questions/tagged/nestjs)
+        >   - If it's just a quick question you can ping [our Twitter](https://twitter.com/nestframework)
 
         **NOTE:** You don't need to answer questions that you know that aren't relevant.
 
