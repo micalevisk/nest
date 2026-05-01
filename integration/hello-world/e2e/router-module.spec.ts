@@ -19,6 +19,8 @@ describe('RouterModule', () => {
   class ChildController extends BaseController {}
   @Controller('no-slash-controller')
   class NoSlashController extends BaseController {}
+  @Controller('shared-controller')
+  class SharedController extends BaseController {}
 
   class UnknownController {}
   @Module({ controllers: [ParentController] })
@@ -35,6 +37,9 @@ describe('RouterModule', () => {
   @Module({ controllers: [NoSlashController] })
   class NoSlashModule {}
 
+  @Module({ controllers: [SharedController] })
+  class SharedModule {}
+
   const routes1: Routes = [
     {
       path: 'parent',
@@ -49,6 +54,16 @@ describe('RouterModule', () => {
   ];
   const routes2: Routes = [
     { path: 'v1', children: [AuthModule, PaymentsModule, NoSlashModule] },
+  ];
+  const routes3: Routes = [
+    {
+      path: 'multi',
+      children: [
+        { path: 'one', module: SharedModule },
+        { path: 'two', module: SharedModule },
+        { path: 'three', module: SharedModule },
+      ],
+    },
   ];
 
   @Module({
@@ -66,9 +81,14 @@ describe('RouterModule', () => {
   })
   class AppModule {}
 
+  @Module({
+    imports: [SharedModule, RouterModule.register(routes3)],
+  })
+  class MultiModule {}
+
   before(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [MainModule, AppModule],
+      imports: [MainModule, AppModule, MultiModule],
     }).compile();
 
     app = moduleRef.createNestApplication();
@@ -91,6 +111,18 @@ describe('RouterModule', () => {
     return request(app.getHttpServer())
       .get('/v1/no-slash-controller')
       .expect(200, 'NoSlashController');
+  });
+
+  it('should hit the "SharedController" under each child path', async () => {
+    await request(app.getHttpServer())
+      .get('/multi/one/shared-controller')
+      .expect(200, 'SharedController');
+    await request(app.getHttpServer())
+      .get('/multi/two/shared-controller')
+      .expect(200, 'SharedController');
+    await request(app.getHttpServer())
+      .get('/multi/three/shared-controller')
+      .expect(200, 'SharedController');
   });
 
   afterEach(async () => {

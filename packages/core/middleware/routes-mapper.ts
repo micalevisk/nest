@@ -91,25 +91,33 @@ export class RoutesMapper {
 
     const toRouteInfo = (item: RouteDefinition, prefix: string) =>
       item.path?.flatMap(p => {
-        let endpointPath = modulePath ?? '';
-        endpointPath += this.normalizeGlobalPath(prefix) + addLeadingSlash(p);
-
-        const routeInfo: RouteInfo = {
-          path: endpointPath,
-          method: item.requestMethod,
-        };
         const version = item.version ?? controllerVersion;
+        const modulePaths = Array.isArray(modulePath)
+          ? modulePath
+          : [modulePath];
+        const routeInfos = modulePaths.map(path => {
+          let endpointPath = path ?? '';
+          endpointPath += this.normalizeGlobalPath(prefix) + addLeadingSlash(p);
+          return {
+            path: endpointPath,
+            method: item.requestMethod,
+          };
+        });
         if (version && versioningConfig) {
           if (typeof version !== 'string' && Array.isArray(version)) {
-            return version.map(v => ({
-              ...routeInfo,
-              version: toUndefinedIfNeural(v),
-            }));
+            return routeInfos.flatMap(routeInfo =>
+              version.map(v => ({
+                ...routeInfo,
+                version: toUndefinedIfNeural(v),
+              })),
+            );
           }
-          routeInfo.version = toUndefinedIfNeural(version);
+          return routeInfos.map(routeInfo => ({
+            ...routeInfo,
+            version: toUndefinedIfNeural(version),
+          }));
         }
-
-        return routeInfo;
+        return routeInfos;
       });
 
     return ([] as string[])
@@ -158,7 +166,7 @@ export class RoutesMapper {
 
   private getModulePath(
     metatype: Type<unknown> | undefined,
-  ): string | undefined {
+  ): string | string[] | undefined {
     if (!metatype) {
       return;
     }

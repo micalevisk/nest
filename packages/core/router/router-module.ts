@@ -68,11 +68,19 @@ export class RouterModule {
     moduleCtor: Type<unknown>,
     modulePath: string,
   ) {
-    Reflect.defineMetadata(
-      MODULE_PATH + this.modulesContainer.applicationId,
-      modulePath,
-      moduleCtor,
-    );
+    const metadataKey = MODULE_PATH + this.modulesContainer.applicationId;
+    const existingPaths = Reflect.getMetadata(metadataKey, moduleCtor);
+    if (!existingPaths) {
+      Reflect.defineMetadata(metadataKey, modulePath, moduleCtor);
+      return;
+    }
+    const paths = Array.isArray(existingPaths)
+      ? existingPaths
+      : [existingPaths];
+    if (paths.includes(modulePath)) {
+      return;
+    }
+    Reflect.defineMetadata(metadataKey, [...paths, modulePath], moduleCtor);
   }
 
   private updateTargetModulesCache(moduleCtor: Type<unknown>) {
