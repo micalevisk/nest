@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   INestApplication,
   RequestMethod,
   VersioningType,
@@ -43,6 +44,15 @@ describe('Dynamic routing (express)', () => {
       .set('x-api-key', 'secret')
       .expect(200)
       .expect({ status: 'ok', details: { db: 'up' } });
+  });
+
+  it('should run module middleware applied path-based against a dynamic route', async () => {
+    const server = await createApp();
+    await request(server)
+      .get('/health')
+      .set('x-api-key', 'secret')
+      .expect(200)
+      .expect('x-dynamic-mw', '1');
   });
 
   it('should serve a functional handler registered before bootstrap with injected deps', async () => {
@@ -97,6 +107,25 @@ describe('Dynamic routing (express)', () => {
       .expect(200, 'late')
       .expect('x-late', '1');
     await request(server).get('/still-missing').expect(404);
+  });
+
+  it('should still route a late functional handler through the exception layer', async () => {
+    const server = await createApp();
+
+    app.get(RouterService).register({
+      method: RequestMethod.GET,
+      path: '/late-error',
+      handler: () => {
+        throw new BadRequestException('late boom');
+      },
+    });
+
+    await request(server)
+      .get('/late-error')
+      .expect(400)
+      .expect(res => {
+        expect(res.body).toMatchObject({ message: 'late boom' });
+      });
   });
 
   it('should install routes registered after listen()', async () => {

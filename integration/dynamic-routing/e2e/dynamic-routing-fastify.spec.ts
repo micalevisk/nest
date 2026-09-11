@@ -50,6 +50,19 @@ describe('Dynamic routing (fastify)', () => {
     expect(missing.statusCode).toBe(404);
   });
 
+  it('should run module middleware applied path-based against a dynamic route', async () => {
+    await createApp();
+    await app.getHttpAdapter().getInstance().ready();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/health',
+      headers: { 'x-api-key': 'secret' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['x-dynamic-mw']).toBe('1');
+  });
+
   it('should install routes registered after init but before the server starts', async () => {
     await createApp();
     app.get(RouterService).register({
