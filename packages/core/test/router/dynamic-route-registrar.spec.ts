@@ -13,6 +13,7 @@ import { ApplicationConfig } from '../../application-config.js';
 import { InvalidDynamicRouteException } from '../../errors/exceptions/invalid-dynamic-route.exception.js';
 import { LateRouteRegistrationException } from '../../errors/exceptions/late-route-registration.exception.js';
 import { RouteConflictException } from '../../errors/exceptions/route-conflict.exception.js';
+import { HandlerMetadataStorage } from '../../helpers/handler-metadata-storage.js';
 import { NestContainer } from '../../injector/container.js';
 import { Injector } from '../../injector/injector.js';
 import { InstanceWrapper } from '../../injector/instance-wrapper.js';
@@ -271,6 +272,46 @@ describe('DynamicRouteRegistrar', () => {
         res,
         expect.any(MetricsService),
       );
+    });
+
+    it('should give back-to-back functional routes distinct metatype subclasses of FunctionalRouteHost', () => {
+      registrar.register(adapter, '', {
+        method: RequestMethod.GET,
+        path: '/first',
+        handler: () => 'first',
+      });
+      registrar.register(adapter, '', {
+        method: RequestMethod.GET,
+        path: '/second',
+        handler: () => 'second',
+      });
+
+      const firstWrapper = applyPathsSpy.mock.calls[0][2] as InstanceWrapper;
+      const secondWrapper = applyPathsSpy.mock.calls[1][2] as InstanceWrapper;
+
+      expect(firstWrapper.metatype).not.toBe(secondWrapper.metatype);
+      expect(
+        (firstWrapper.instance as FunctionalRouteHost) instanceof
+          FunctionalRouteHost,
+      ).toBe(true);
+      expect(
+        (secondWrapper.instance as FunctionalRouteHost) instanceof
+          FunctionalRouteHost,
+      ).toBe(true);
+
+      // HandlerMetadataStorage keys its cache by constructor + method name;
+      // distinct metatypes must therefore produce distinct cache entries
+      // instead of the two routes sharing (and clobbering) one another's
+      // cached httpStatusCode/etc.
+      const storage = new HandlerMetadataStorage();
+      storage.set(firstWrapper.instance, 'handle', { httpStatusCode: 200 });
+      storage.set(secondWrapper.instance, 'handle', { httpStatusCode: 201 });
+      expect(storage.get(firstWrapper.instance, 'handle')).toMatchObject({
+        httpStatusCode: 200,
+      });
+      expect(storage.get(secondWrapper.instance, 'handle')).toMatchObject({
+        httpStatusCode: 201,
+      });
     });
 
     it('should apply the default version to functional routes', () => {

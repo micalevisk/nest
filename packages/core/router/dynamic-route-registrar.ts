@@ -233,21 +233,29 @@ export class DynamicRouteRegistrar {
     const deps = (definition.inject ?? []).map(token =>
       this.resolveStaticDependency(token, definition.method, paths),
     );
-    const host = new FunctionalRouteHost(
-      definition.handler,
-      deps,
-      definition.metadata,
-    );
+    const name = `DynamicRoute(${RequestMethod[definition.method]} ${paths.join(', ')})`;
+    // Each functional route gets its own FunctionalRouteHost subclass so
+    // HandlerMetadataStorage (keyed by controller + method name) does not
+    // collide across routes that all share the constant handler method
+    // name — see FunctionalRouteHost.createRouteClass for details.
+    const HostClass = FunctionalRouteHost.createRouteClass(name);
+    const host = new HostClass(definition.handler, deps, definition.metadata);
     const instanceWrapper = new InstanceWrapper({
-      name: `DynamicRoute(${RequestMethod[definition.method]} ${paths.join(', ')})`,
-      metatype: FunctionalRouteHost,
+      name,
+      metatype: HostClass,
       instance: host,
       isResolved: true,
     });
     const routeDefinition: RouteDefinition = {
       path: paths,
       requestMethod: definition.method,
-      targetCallback: host.handle,
+      // FunctionalRouteHost#handle returns the handler's result (consumed
+      // by the response pipeline via the ROUTE_ARGS_METADATA/response
+      // handling in RouterExecutionContext), not `void` — RouterProxyCallback
+      // describes the middleware-proxy shape used elsewhere and doesn't
+      // reflect this callback's actual runtime contract.
+      targetCallback:
+        host.handle as unknown as RouteDefinition['targetCallback'],
       methodName: FUNCTIONAL_ROUTE_HANDLER_METHOD,
       version: definition.version,
     };

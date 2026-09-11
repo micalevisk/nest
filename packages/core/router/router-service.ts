@@ -74,7 +74,10 @@ export class RouterService {
     if (!isObject(definition)) {
       throw new InvalidDynamicRouteException('expected an object');
     }
-    const { method, path, handler } = definition as Record<string, unknown>;
+    const { method, path, handler } = definition as unknown as Record<
+      string,
+      unknown
+    >;
     if (typeof method !== 'number' || RequestMethod[method] === undefined) {
       throw new InvalidDynamicRouteException(
         '"method" must be a RequestMethod enum value',
