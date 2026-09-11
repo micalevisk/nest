@@ -116,58 +116,94 @@ export class RouteConflictDetector {
     versioningOptions: VersioningOptions | undefined,
   ): RouteConflict[] {
     const conflicts: RouteConflict[] = [];
-
     RouteConflictDetector.forEachUniquePair(
       routes,
       (earlierRoute, laterRoute) => {
-        if (
-          !RouteConflictDetector.methodsCanOverlap(
-            earlierRoute.method,
-            laterRoute.method,
-          )
-        ) {
-          return;
-        }
-        if (
-          !RouteConflictDetector.versionsCanOverlap(
-            earlierRoute.version,
-            laterRoute.version,
-            versioningOptions,
-          )
-        ) {
-          return;
-        }
-        if (
-          !RouteConflictDetector.hostsCanOverlap(
-            earlierRoute.host,
-            laterRoute.host,
-          )
-        ) {
-          return;
-        }
-        if (
-          !RouteConflictDetector.pathsCanOverlap(
-            earlierRoute.path,
-            laterRoute.path,
-          )
-        ) {
-          return;
-        }
-
-        const isIdentical = RouteConflictDetector.routesAreIdentical(
+        const conflict = RouteConflictDetector.compare(
           earlierRoute,
           laterRoute,
           versioningOptions,
         );
-        conflicts.push({
-          winner: earlierRoute,
-          shadowed: laterRoute,
-          kind: isIdentical ? 'duplicate' : 'shadow',
-        });
+        if (conflict) {
+          conflicts.push(conflict);
+        }
       },
     );
-
     return conflicts;
+  }
+
+  /**
+   * Like `detect()`, but only considers pairs that involve at least one
+   * `incoming` route: every `existing` route is compared against every
+   * `incoming` route (existing wins), and incoming routes are compared
+   * among themselves (earlier wins). Pairs of `existing` routes are
+   * skipped because they were already reported when they were registered.
+   * Used for routes installed after the initial resolution.
+   */
+  public static detectAgainst(
+    existing: ResolvedRoute[],
+    incoming: ResolvedRoute[],
+    versioningOptions: VersioningOptions | undefined,
+  ): RouteConflict[] {
+    const conflicts: RouteConflict[] = [];
+    incoming.forEach((laterRoute, index) => {
+      const earlierRoutes = [...existing, ...incoming.slice(0, index)];
+      earlierRoutes.forEach(earlierRoute => {
+        const conflict = RouteConflictDetector.compare(
+          earlierRoute,
+          laterRoute,
+          versioningOptions,
+        );
+        if (conflict) {
+          conflicts.push(conflict);
+        }
+      });
+    });
+    return conflicts;
+  }
+
+  private static compare(
+    earlierRoute: ResolvedRoute,
+    laterRoute: ResolvedRoute,
+    versioningOptions: VersioningOptions | undefined,
+  ): RouteConflict | null {
+    if (
+      !RouteConflictDetector.methodsCanOverlap(
+        earlierRoute.method,
+        laterRoute.method,
+      )
+    ) {
+      return null;
+    }
+    if (
+      !RouteConflictDetector.versionsCanOverlap(
+        earlierRoute.version,
+        laterRoute.version,
+        versioningOptions,
+      )
+    ) {
+      return null;
+    }
+    if (
+      !RouteConflictDetector.hostsCanOverlap(earlierRoute.host, laterRoute.host)
+    ) {
+      return null;
+    }
+    if (
+      !RouteConflictDetector.pathsCanOverlap(earlierRoute.path, laterRoute.path)
+    ) {
+      return null;
+    }
+    const isIdentical = RouteConflictDetector.routesAreIdentical(
+      earlierRoute,
+      laterRoute,
+      versioningOptions,
+    );
+    return {
+      winner: earlierRoute,
+      shadowed: laterRoute,
+      kind: isIdentical ? 'duplicate' : 'shadow',
+    };
   }
 
   /**

@@ -660,4 +660,64 @@ describe('RouteConflictDetector', () => {
       ).toHaveLength(0);
     });
   });
+
+  describe('detectAgainst', () => {
+    it('should report conflicts between existing (winner) and incoming (shadowed) routes', () => {
+      const existing = makeResolvedRoute({ path: '/users/:id' });
+      const incoming = makeResolvedRoute({ path: '/users/me' });
+
+      const conflicts = RouteConflictDetector.detectAgainst(
+        [existing],
+        [incoming],
+        undefined,
+      );
+
+      expect(conflicts).toHaveLength(1);
+      expect(conflicts[0]).toMatchObject({
+        winner: existing,
+        shadowed: incoming,
+        kind: 'shadow',
+      });
+    });
+
+    it('should not re-report conflicts among existing routes', () => {
+      const a = makeResolvedRoute({ path: '/users/:id' });
+      const b = makeResolvedRoute({ path: '/users/me' });
+      const incoming = makeResolvedRoute({ path: '/orders' });
+
+      expect(
+        RouteConflictDetector.detectAgainst([a, b], [incoming], undefined),
+      ).toHaveLength(0);
+    });
+
+    it('should report duplicates among the incoming routes themselves', () => {
+      const first = makeResolvedRoute({ path: '/health' });
+      const second = makeResolvedRoute({ path: '/health' });
+
+      const conflicts = RouteConflictDetector.detectAgainst(
+        [],
+        [first, second],
+        undefined,
+      );
+
+      expect(conflicts).toEqual([
+        { winner: first, shadowed: second, kind: 'duplicate' },
+      ]);
+    });
+
+    it('should honour method, version and host filters', () => {
+      const existing = makeResolvedRoute({
+        path: '/health',
+        method: RequestMethod.POST,
+      });
+      const incoming = makeResolvedRoute({
+        path: '/health',
+        method: RequestMethod.GET,
+      });
+
+      expect(
+        RouteConflictDetector.detectAgainst([existing], [incoming], undefined),
+      ).toHaveLength(0);
+    });
+  });
 });
