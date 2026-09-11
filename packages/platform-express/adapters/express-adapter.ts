@@ -714,7 +714,10 @@ export class ExpressAdapter extends AbstractHttpAdapter<
     if (this.lateRouter) {
       return;
     }
-    this.lateRouter = express.Router();
+    this.lateRouter = express.Router({
+      caseSensitive: this.instance.enabled('case sensitive routing'),
+      strict: this.instance.enabled('strict routing'),
+    });
     this.instance.use(this.lateRouter);
   }
 

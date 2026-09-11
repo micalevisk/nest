@@ -143,5 +143,16 @@ describe('ExpressAdapter', () => {
 
       expect(adapter.get('trust proxy')).toBe(true);
     });
+
+    it('should apply the app routing settings (case sensitive routing) to the late router', async () => {
+      const instance = express();
+      const adapter = new ExpressAdapter(instance);
+      instance.set('case sensitive routing', true);
+      adapter.setNotFoundHandler((_req, res) => res.status(404).send('nope'));
+      adapter.get('/late', (_req, res) => res.send('late'));
+
+      await request(instance).get('/late').expect(200, 'late');
+      await request(instance).get('/Late').expect(404);
+    });
   });
 });
