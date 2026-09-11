@@ -11,6 +11,8 @@ import {
 import { MODULE_PATH } from '@nestjs/common/internal';
 import { ApplicationConfig } from '../../application-config.js';
 import { InvalidDynamicRouteException } from '../../errors/exceptions/invalid-dynamic-route.exception.js';
+import { LateRouteRegistrationException } from '../../errors/exceptions/late-route-registration.exception.js';
+import { RouteConflictException } from '../../errors/exceptions/route-conflict.exception.js';
 import { NestContainer } from '../../injector/container.js';
 import { Injector } from '../../injector/injector.js';
 import { InstanceWrapper } from '../../injector/instance-wrapper.js';
@@ -21,6 +23,7 @@ import {
   FUNCTIONAL_ROUTE_HANDLER_METHOD,
   FunctionalRouteHost,
 } from '../../router/functional-route-host.js';
+import { ResolvedRoute } from '../../router/interfaces/resolved-route.interface.js';
 import { RoutePathFactory } from '../../router/route-path-factory.js';
 import { RouterExceptionFilters } from '../../router/router-exception-filters.js';
 import { RouterExplorer } from '../../router/router-explorer.js';
@@ -305,6 +308,152 @@ describe('DynamicRouteRegistrar', () => {
           inject: [RequestScopedService],
         }),
       ).toThrow(InvalidDynamicRouteException);
+    });
+  });
+
+  describe('registerLive', () => {
+    const makeResolved = (path: string): ResolvedRoute => ({
+      method: RequestMethod.GET,
+      path,
+      host: undefined,
+      version: undefined,
+      methodVersion: undefined,
+      controllerVersion: undefined,
+      handler: () => {},
+      targetCallback: () => {},
+      methodName: 'x',
+      instanceWrapper: { name: 'X' } as any,
+    });
+    let registerResolvedSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      // Let the real explorer resolve routes, but never touch the adapter.
+      applyPathsSpy.mockRestore();
+      registerResolvedSpy = vi
+        .spyOn(routerExplorer, 'registerResolvedRoute')
+        .mockImplementation(() => {});
+    });
+
+    it('should resolve, install and record the route', () => {
+      const resolvedRoutes: ResolvedRoute[] = [];
+      registrar.registerLive(
+        adapter,
+        '/api',
+        {
+          method: RequestMethod.GET,
+          path: '/late',
+          handler: () => 'late',
+        },
+        resolvedRoutes,
+      );
+
+      expect(registerResolvedSpy).toHaveBeenCalledTimes(1);
+      expect(registerResolvedSpy.mock.calls[0][1]).toMatchObject({
+        method: RequestMethod.GET,
+        path: '/api/late',
+      });
+      expect(resolvedRoutes).toHaveLength(1);
+      expect(resolvedRoutes[0].path).toBe('/api/late');
+    });
+
+    it('should throw the configured conflict error and install nothing', () => {
+      applicationConfig.setRouteConflictPolicy({ duplicate: 'error' });
+      const resolvedRoutes = [makeResolved('/late')];
+
+      expect(() =>
+        registrar.registerLive(
+          adapter,
+          '',
+          {
+            method: RequestMethod.GET,
+            path: '/late',
+            handler: () => {},
+          },
+          resolvedRoutes,
+        ),
+      ).toThrow(RouteConflictException);
+      expect(registerResolvedSpy).not.toHaveBeenCalled();
+      expect(resolvedRoutes).toHaveLength(1);
+    });
+
+    it('should warn (not throw) for warn-level conflicts', () => {
+      applicationConfig.setRouteConflictPolicy({ shadow: 'warn' });
+      const warnSpy = vi
+        .spyOn((registrar as any).logger, 'warn')
+        .mockImplementation(() => {});
+
+      registrar.registerLive(
+        adapter,
+        '',
+        {
+          method: RequestMethod.GET,
+          path: '/users/me',
+          handler: () => {},
+        },
+        [makeResolved('/users/:id')],
+      );
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(registerResolvedSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should skip duplicate routes on adapters that reject duplicates', () => {
+      applicationConfig.setRouteConflictPolicy({ duplicate: 'warn' });
+      vi.spyOn((registrar as any).logger, 'warn').mockImplementation(() => {});
+      const fastifyLike = Object.assign(new NoopHttpAdapter({}), {
+        isRouteOrderSensitive: () => false,
+      });
+
+      registrar.registerLive(
+        fastifyLike,
+        '',
+        {
+          method: RequestMethod.GET,
+          path: '/late',
+          handler: () => {},
+        },
+        [makeResolved('/late')],
+      );
+
+      expect(registerResolvedSpy).not.toHaveBeenCalled();
+    });
+
+    it('should reject late registration once a duplicate-rejecting adapter is listening', () => {
+      const fastifyLike = Object.assign(new NoopHttpAdapter({}), {
+        isRouteOrderSensitive: () => false,
+      });
+      container.getHttpAdapterHostRef().listening = true;
+
+      expect(() =>
+        registrar.registerLive(
+          fastifyLike,
+          '',
+          {
+            method: RequestMethod.GET,
+            path: '/late',
+            handler: () => {},
+          },
+          [],
+        ),
+      ).toThrow(LateRouteRegistrationException);
+      expect(registerResolvedSpy).not.toHaveBeenCalled();
+    });
+
+    it('should allow late registration on order-sensitive adapters while listening', () => {
+      container.getHttpAdapterHostRef().listening = true;
+
+      registrar.registerLive(
+        adapter,
+        '',
+        {
+          method: RequestMethod.GET,
+          path: '/late',
+          handler: () => {},
+        },
+        [],
+      );
+
+      expect(registerResolvedSpy).toHaveBeenCalledTimes(1);
     });
   });
 });

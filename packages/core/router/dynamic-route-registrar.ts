@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common/internal';
 import { ApplicationConfig } from '../application-config.js';
 import { InvalidDynamicRouteException } from '../errors/exceptions/invalid-dynamic-route.exception.js';
+import { LateRouteRegistrationException } from '../errors/exceptions/late-route-registration.exception.js';
 import { NestContainer } from '../injector/container.js';
 import {
   InstanceLink,
@@ -30,8 +31,10 @@ import {
   DynamicRouteDefinition,
   FunctionalDynamicRoute,
 } from './interfaces/dynamic-route.interface.js';
+import { ResolvedRoute } from './interfaces/resolved-route.interface.js';
 import { RoutePathMetadata } from './interfaces/route-path-metadata.interface.js';
 import { RouteResolutionOptions } from './interfaces/route-resolution-options.interface.js';
+import { RouteConflictDetector } from './route-conflict-detector.js';
 import { RouteDefinition, RouterExplorer } from './router-explorer.js';
 import { getModulePathMetadata } from './utils/module-path.util.js';
 
@@ -86,6 +89,84 @@ export class DynamicRouteRegistrar {
       target.host!,
       options,
     );
+  }
+
+  /**
+   * Installs a definition immediately (live phase, after the application
+   * routes were resolved). The route is resolved through the same
+   * pipeline, checked against every previously resolved route with the
+   * configured `routeConflictPolicy`, and then registered on the adapter.
+   * Specificity sorting cannot be applied retroactively: live routes are
+   * appended in registration order.
+   */
+  public registerLive(
+    applicationRef: HttpServer,
+    globalPrefix: string,
+    definition: DynamicRouteDefinition,
+    resolvedRoutes: ResolvedRoute[],
+  ): void {
+    const adapterIsOrderSensitive =
+      applicationRef.isRouteOrderSensitive?.() ?? true;
+    // Adapters that are not order-sensitive (e.g. Fastify) also freeze
+    // their route table once the server starts. Mirror the assumption
+    // made in NestApplication#registerRouter until a dedicated
+    // capability flag exists.
+    const isListening = this.container.getHttpAdapterHostRef()?.listening;
+    if (isListening && !adapterIsOrderSensitive) {
+      throw new LateRouteRegistrationException(
+        definition.method,
+        this.normalizePaths(definition.path)[0],
+        applicationRef.constructor.name,
+      );
+    }
+
+    const incoming: ResolvedRoute[] = [];
+    this.register(applicationRef, globalPrefix, definition, {
+      deferRegistration: true,
+      onRouteResolved: route => incoming.push(route),
+    });
+
+    const routesToSkip = this.applyConflictPolicy(
+      resolvedRoutes,
+      incoming,
+      adapterIsOrderSensitive,
+    );
+    incoming.forEach(route => {
+      resolvedRoutes.push(route);
+      if (routesToSkip.has(route)) {
+        return;
+      }
+      this.routerExplorer.registerResolvedRoute(applicationRef, route);
+    });
+  }
+
+  private applyConflictPolicy(
+    existing: ResolvedRoute[],
+    incoming: ResolvedRoute[],
+    adapterIsOrderSensitive: boolean,
+  ): Set<ResolvedRoute> {
+    const routesToSkip = new Set<ResolvedRoute>();
+    const conflictPolicy = this.applicationConfig.getRouteConflictPolicy();
+    if (!conflictPolicy) {
+      return routesToSkip;
+    }
+    const conflicts = RouteConflictDetector.detectAgainst(
+      existing,
+      incoming,
+      this.applicationConfig.getVersioning(),
+    );
+    const filteredPolicy = adapterIsOrderSensitive
+      ? conflictPolicy
+      : { duplicate: conflictPolicy.duplicate };
+    if (!adapterIsOrderSensitive) {
+      conflicts.forEach(conflict => {
+        if (conflict.kind === 'duplicate') {
+          routesToSkip.add(conflict.shadowed);
+        }
+      });
+    }
+    RouteConflictDetector.handle(conflicts, filteredPolicy, this.logger);
+    return routesToSkip;
   }
 
   private isControllerRoute(
