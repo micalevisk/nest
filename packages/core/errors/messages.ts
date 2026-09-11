@@ -281,6 +281,16 @@ export const SHADOWED_ROUTE_MESSAGE = (
 ) =>
   `Route ${method} ${shadowedPath} (${shadowedHandlerLabel}) is shadowed by ${method} ${winnerPath} (${winnerHandlerLabel}). The first-registered route will match all matching requests on order-sensitive adapters.`;
 
+export const INVALID_DYNAMIC_ROUTE_MESSAGE = (reason: string) =>
+  `Invalid dynamic route definition passed to "RouterService#register()": ${reason}`;
+
+export const LATE_ROUTE_REGISTRATION_MESSAGE = (
+  method: string,
+  path: string,
+  adapterName: string,
+) =>
+  `Cannot register the dynamic route {${path}, ${method}}: the HTTP server is already listening and "${adapterName}" does not support adding routes after startup. Register the route before calling "app.listen()".`;
+
 export const INVALID_MIDDLEWARE_CONFIGURATION = `An invalid middleware configuration has been passed inside the module 'configure()' method.`;
 export const UNHANDLED_RUNTIME_EXCEPTION = `Unhandled Runtime Exception.`;
 export const INVALID_EXCEPTION_FILTER = `Invalid exception filters (@UseFilters()).`;

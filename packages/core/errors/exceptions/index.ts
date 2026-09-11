@@ -7,3 +7,5 @@ export * from './route-conflict.exception.js';
 export * from './unknown-export.exception.js';
 export * from './unknown-module.exception.js';
 export * from './undefined-forwardref.exception.js';
+export * from './invalid-dynamic-route.exception.js';
+export * from './late-route-registration.exception.js';
