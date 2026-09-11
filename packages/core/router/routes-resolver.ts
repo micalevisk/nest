@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import {
   HOST_METADATA,
-  MODULE_PATH,
   VERSION_METADATA,
   type Controller,
   type VersionValue,
@@ -29,6 +28,7 @@ import { RoutePathFactory } from './route-path-factory.js';
 import { RouterExceptionFilters } from './router-exception-filters.js';
 import { RouterExplorer } from './router-explorer.js';
 import { RouterProxy } from './router-proxy.js';
+import { getModulePathMetadata } from './utils/module-path.util.js';
 
 export class RoutesResolver implements Resolver {
   private readonly logger = new Logger(RoutesResolver.name, {
@@ -188,12 +188,7 @@ export class RoutesResolver implements Resolver {
   }
 
   private getModulePathMetadata(metatype: Type<unknown>): string | undefined {
-    const modulesContainer = this.container.getModules();
-    const modulePath = Reflect.getMetadata(
-      MODULE_PATH + modulesContainer.applicationId,
-      metatype,
-    );
-    return modulePath ?? Reflect.getMetadata(MODULE_PATH, metatype);
+    return getModulePathMetadata(this.container, metatype);
   }
 
   private getHostMetadata(
