@@ -73,6 +73,7 @@ export class RoutesResolver implements Resolver {
       this.container,
       this.applicationConfig,
       this.routerExplorer,
+      graphInspector,
     );
   }
 

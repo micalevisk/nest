@@ -14,6 +14,7 @@ import { InvalidDynamicRouteException } from '../../errors/exceptions/invalid-dy
 import { LateRouteRegistrationException } from '../../errors/exceptions/late-route-registration.exception.js';
 import { RouteConflictException } from '../../errors/exceptions/route-conflict.exception.js';
 import { HandlerMetadataStorage } from '../../helpers/handler-metadata-storage.js';
+import type { HandlerMetadata } from '../../helpers/handler-metadata-storage.js';
 import { NestContainer } from '../../injector/container.js';
 import { Injector } from '../../injector/injector.js';
 import { InstanceWrapper } from '../../injector/instance-wrapper.js';
@@ -62,6 +63,7 @@ describe('DynamicRouteRegistrar', () => {
   let registrar: DynamicRouteRegistrar;
   let applyPathsSpy: ReturnType<typeof vi.spyOn>;
   let moduleKey: string;
+  let graphInspector: GraphInspector;
   const adapter = new NoopHttpAdapter({});
 
   beforeEach(async () => {
@@ -75,7 +77,9 @@ describe('DynamicRouteRegistrar', () => {
     moduleRef.controllers.get(HealthController)!.instance =
       new HealthController();
     moduleRef.providers.get(MetricsService)!.instance = new MetricsService();
+    container.registerCoreModuleRef(moduleRef);
 
+    graphInspector = new GraphInspector(container);
     routerExplorer = new RouterExplorer(
       new MetadataScanner(),
       container,
@@ -84,7 +88,7 @@ describe('DynamicRouteRegistrar', () => {
       new RouterExceptionFilters(container, applicationConfig, adapter),
       applicationConfig,
       new RoutePathFactory(applicationConfig),
-      new GraphInspector(container),
+      graphInspector,
     );
     applyPathsSpy = vi
       .spyOn(routerExplorer, 'applyPathsToRouterProxy')
@@ -93,6 +97,7 @@ describe('DynamicRouteRegistrar', () => {
       container,
       applicationConfig,
       routerExplorer,
+      graphInspector,
     );
   });
 
@@ -274,6 +279,23 @@ describe('DynamicRouteRegistrar', () => {
       );
     });
 
+    it('should register the synthetic wrapper with the graph inspector', () => {
+      const insertClassNodeSpy = vi.spyOn(graphInspector, 'insertClassNode');
+      registrar.register(adapter, '/api', {
+        method: RequestMethod.GET,
+        path: '/metrics',
+        handler: () => 'ok',
+      });
+
+      const [, , wrapper] = applyPathsSpy.mock.calls[0];
+      expect(insertClassNodeSpy).toHaveBeenCalledTimes(1);
+      expect(insertClassNodeSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        wrapper,
+        'provider',
+      );
+    });
+
     it('should give back-to-back functional routes distinct metatype subclasses of FunctionalRouteHost', () => {
       registrar.register(adapter, '', {
         method: RequestMethod.GET,
@@ -304,8 +326,12 @@ describe('DynamicRouteRegistrar', () => {
       // instead of the two routes sharing (and clobbering) one another's
       // cached httpStatusCode/etc.
       const storage = new HandlerMetadataStorage();
-      storage.set(firstWrapper.instance, 'handle', { httpStatusCode: 200 });
-      storage.set(secondWrapper.instance, 'handle', { httpStatusCode: 201 });
+      storage.set(firstWrapper.instance, 'handle', {
+        httpStatusCode: 200,
+      } as HandlerMetadata);
+      storage.set(secondWrapper.instance, 'handle', {
+        httpStatusCode: 201,
+      } as HandlerMetadata);
       expect(storage.get(firstWrapper.instance, 'handle')).toMatchObject({
         httpStatusCode: 200,
       });

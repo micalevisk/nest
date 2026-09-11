@@ -22,6 +22,7 @@ import {
 } from '../injector/instance-links-host.js';
 import { InstanceWrapper } from '../injector/instance-wrapper.js';
 import { Module } from '../injector/module.js';
+import { GraphInspector } from '../inspector/graph-inspector.js';
 import {
   FUNCTIONAL_ROUTE_HANDLER_METHOD,
   FunctionalRouteHost,
@@ -63,6 +64,7 @@ export class DynamicRouteRegistrar {
     private readonly container: NestContainer,
     private readonly applicationConfig: ApplicationConfig,
     private readonly routerExplorer: RouterExplorer,
+    private readonly graphInspector: GraphInspector,
   ) {}
 
   /**
@@ -76,9 +78,20 @@ export class DynamicRouteRegistrar {
     definition: DynamicRouteDefinition,
     options: RouteResolutionOptions = {},
   ): void {
+    // Built fresh per call (rather than reused across registrations) so
+    // modules loaded lazily between two `register()` calls are visible.
+    const instanceLinksHost = new InstanceLinksHost(this.container);
     const target = this.isControllerRoute(definition)
-      ? this.resolveControllerTarget(definition, globalPrefix)
-      : this.resolveFunctionalTarget(definition, globalPrefix);
+      ? this.resolveControllerTarget(
+          definition,
+          globalPrefix,
+          instanceLinksHost,
+        )
+      : this.resolveFunctionalTarget(
+          definition,
+          globalPrefix,
+          instanceLinksHost,
+        );
 
     this.routerExplorer.applyPathsToRouterProxy(
       applicationRef,
@@ -180,14 +193,24 @@ export class DynamicRouteRegistrar {
   private resolveControllerTarget(
     definition: ControllerDynamicRoute,
     globalPrefix: string,
+    instanceLinksHost: InstanceLinksHost,
   ): ResolvedTarget {
     const { handler: metatype, handlerMethod } = definition;
+    const notRegisteredReason = `"${metatype.name}" is not registered in any module; add it to the "controllers" (or "providers") array of a module`;
     const link = this.findInstanceLink(
       metatype,
-      `"${metatype.name}" is not registered in any module; add it to the "controllers" (or "providers") array of a module`,
+      notRegisteredReason,
+      instanceLinksHost,
     );
     const moduleRef = this.findModuleById(link.moduleId);
     const isController = link.collection === moduleRef.controllers;
+    const isProvider = link.collection === moduleRef.providers;
+    // Only classes actually listed in a module's `controllers` or
+    // `providers` are eligible; a class merely registered as an
+    // `injectable` (guard/pipe/interceptor/filter) is not.
+    if (!isController && !isProvider) {
+      throw new InvalidDynamicRouteException(notRegisteredReason);
+    }
     if (!isController && !link.wrapperRef.isDependencyTreeStatic()) {
       throw new InvalidDynamicRouteException(
         `"${metatype.name}" is request-scoped or transient; register it in the "controllers" array of its module to use it as a dynamic route handler`,
@@ -228,10 +251,16 @@ export class DynamicRouteRegistrar {
   private resolveFunctionalTarget(
     definition: FunctionalDynamicRoute,
     globalPrefix: string,
+    instanceLinksHost: InstanceLinksHost,
   ): ResolvedTarget {
     const paths = this.normalizePaths(definition.path);
     const deps = (definition.inject ?? []).map(token =>
-      this.resolveStaticDependency(token, definition.method, paths),
+      this.resolveStaticDependency(
+        token,
+        definition.method,
+        paths,
+        instanceLinksHost,
+      ),
     );
     const name = `DynamicRoute(${RequestMethod[definition.method]} ${paths.join(', ')})`;
     // Each functional route gets its own FunctionalRouteHost subclass so
@@ -246,6 +275,14 @@ export class DynamicRouteRegistrar {
       instance: host,
       isResolved: true,
     });
+    const internalCoreModuleRef = this.container.getInternalCoreModuleRef();
+    if (internalCoreModuleRef) {
+      this.graphInspector.insertClassNode(
+        internalCoreModuleRef,
+        instanceWrapper,
+        'provider',
+      );
+    }
     const routeDefinition: RouteDefinition = {
       path: paths,
       requestMethod: definition.method,
@@ -279,11 +316,13 @@ export class DynamicRouteRegistrar {
     token: InjectionToken,
     method: RequestMethod,
     paths: string[],
+    instanceLinksHost: InstanceLinksHost,
   ): unknown {
     const routeLabel = `{${paths[0]}, ${RequestMethod[method]}}`;
     const link = this.findInstanceLink(
       token,
       `cannot inject "${this.tokenToString(token)}" into the handler of ${routeLabel}: no such provider`,
+      instanceLinksHost,
     );
     if (!link.wrapperRef.isDependencyTreeStatic()) {
       throw new InvalidDynamicRouteException(
@@ -296,9 +335,10 @@ export class DynamicRouteRegistrar {
   private findInstanceLink(
     token: InjectionToken,
     reason: string,
+    instanceLinksHost: InstanceLinksHost,
   ): InstanceLink {
     try {
-      return new InstanceLinksHost(this.container).get(token);
+      return instanceLinksHost.get(token);
     } catch {
       throw new InvalidDynamicRouteException(reason);
     }

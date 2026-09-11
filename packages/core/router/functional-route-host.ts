@@ -28,7 +28,7 @@ export class FunctionalRouteHost {
     this.handle = (req: unknown, res: unknown) => handler(req, res, ...deps);
     if (metadata) {
       for (const key of Reflect.ownKeys(metadata)) {
-        Reflect.defineMetadata(key, metadata[key as any], this.handle);
+        Reflect.defineMetadata(key, metadata[key], this.handle);
       }
     }
   }

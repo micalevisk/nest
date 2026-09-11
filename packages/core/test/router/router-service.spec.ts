@@ -108,10 +108,39 @@ describe('RouterService', () => {
           metadata: 'x',
         },
       ],
+      [
+        'array metadata',
+        {
+          method: RequestMethod.GET,
+          path: '/x',
+          handler: () => {},
+          metadata: ['nope'],
+        },
+      ],
+      [
+        'class handler without handlerMethod',
+        {
+          method: RequestMethod.GET,
+          path: '/x',
+          handler: HealthController,
+        },
+      ],
     ])('should throw InvalidDynamicRouteException for %s', (_, definition) => {
       expect(() => service.register(definition as any)).toThrow(
         InvalidDynamicRouteException,
       );
+    });
+
+    it('should call a bound registrar before recording the snapshot, and rethrow (and not record it) when the registrar throws', () => {
+      const error = new Error('conflict');
+      const registrar = vi.fn().mockImplementation(() => {
+        throw error;
+      });
+      service.bindRegistrar(registrar);
+
+      expect(() => service.register(functionalRoute)).toThrow(error);
+      expect(registrar).toHaveBeenCalledTimes(1);
+      expect(service.getRoutes()).toHaveLength(0);
     });
   });
 });

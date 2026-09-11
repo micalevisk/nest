@@ -30,7 +30,14 @@ export type DynamicRouteRegistrarFn = (
  * Routes registered before the application routes are resolved take part
  * in the normal resolution process (specificity sorting, conflict
  * detection, etc.). Routes registered afterwards are installed
- * immediately. Registration is additive: there is no removal API.
+ * immediately, appended in call order — specificity sorting cannot be
+ * applied retroactively. Registration is additive: there is no removal
+ * API. On Fastify, registering after `app.listen()` throws
+ * `LateRouteRegistrationException`; registering after a manual
+ * `instance.ready()` is rejected by Fastify itself instead. `path` is
+ * always the complete path: the global prefix and the owning module's
+ * `RouterModule` path are prepended, but a class handler's own
+ * `@Controller()` prefix is not applied.
  *
  * @publicApi
  */
@@ -39,15 +46,19 @@ export class RouterService {
   private readonly pending: DynamicRouteDefinition[] = [];
   private registrar: DynamicRouteRegistrarFn | null = null;
 
-  public register(definition: DynamicRouteDefinition): void {
-    this.validate(definition);
+  public register<T = any>(definition: DynamicRouteDefinition<T>): void {
+    this.validate(definition as DynamicRouteDefinition);
     const snapshot = Object.freeze({ ...definition }) as DynamicRouteDefinition;
-    this.routes.push(snapshot);
 
     if (this.registrar) {
+      // Call the registrar before recording the snapshot: if it throws
+      // (e.g. the route conflicts with an existing one), the rejected
+      // registration must not show up in `getRoutes()`.
       this.registrar(snapshot);
+      this.routes.push(snapshot);
       return;
     }
+    this.routes.push(snapshot);
     this.pending.push(snapshot);
   }
 
@@ -94,6 +105,7 @@ export class RouterService {
         '"handler" must be a class or a function',
       );
     }
+    const isClassHandler = RouterService.isClass(handler);
     if (
       'handlerMethod' in definition &&
       definition.handlerMethod !== undefined
@@ -105,13 +117,27 @@ export class RouterService {
       }
       return;
     }
+    if (isClassHandler) {
+      throw new InvalidDynamicRouteException(
+        '"handler" is a class; "handlerMethod" is required to select which method handles the route',
+      );
+    }
     if (definition.inject !== undefined && !Array.isArray(definition.inject)) {
       throw new InvalidDynamicRouteException(
         '"inject" must be an array of injection tokens',
       );
     }
-    if (definition.metadata !== undefined && !isObject(definition.metadata)) {
-      throw new InvalidDynamicRouteException('"metadata" must be an object');
+    if (
+      definition.metadata !== undefined &&
+      (Array.isArray(definition.metadata) || !isObject(definition.metadata))
+    ) {
+      throw new InvalidDynamicRouteException(
+        '"metadata" must be an object, not an array',
+      );
     }
+  }
+
+  private static isClass(fn: Function): boolean {
+    return Function.prototype.toString.call(fn).startsWith('class');
   }
 }

@@ -38,6 +38,10 @@ export interface DynamicRouteBase {
  * @publicApi
  */
 export interface ControllerDynamicRoute<T = any> extends DynamicRouteBase {
+  /**
+   * A controller listed in more than one module resolves to whichever
+   * module registered it last.
+   */
   handler: Type<T>;
   handlerMethod: Extract<keyof T, string>;
   inject?: never;
