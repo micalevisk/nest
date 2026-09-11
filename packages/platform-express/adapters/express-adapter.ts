@@ -50,6 +50,39 @@ type VersionedRoute = <
 ) => any;
 
 /**
+ * `express.Application['get']` is typed as `((name: string) => any) &
+ * express.IRouterMatcher<this>` (the settings-getter overload intersected
+ * with the route-matcher overload), and `getRouteTarget()` returns
+ * `express.Application | express.Router`. Spreading a handlers array into a
+ * call on that union — even a well-typed `(path, ...handlers)` tuple —
+ * cannot be resolved by TypeScript, because each union member's `get`
+ * resolves to a different (intersected vs. plain) generic overload. This
+ * type describes only the verb-matcher shape every route-registration
+ * method here actually uses, so each call has a single, non-unioned
+ * generic overload to resolve against.
+ */
+type ExpressRouteMatcherTarget = {
+  [Verb in
+    | 'get'
+    | 'post'
+    | 'put'
+    | 'delete'
+    | 'patch'
+    | 'all'
+    | 'options'
+    | 'head'
+    | 'search'
+    | 'query'
+    | 'propfind'
+    | 'proppatch'
+    | 'mkcol'
+    | 'copy'
+    | 'move'
+    | 'lock'
+    | 'unlock']: express.IRouterMatcher<any>;
+};
+
+/**
  * @publicApi
  */
 export class ExpressAdapter extends AbstractHttpAdapter<
@@ -207,103 +240,120 @@ export class ExpressAdapter extends AbstractHttpAdapter<
     if (args.length === 1 && typeof args[0] === 'string') {
       return this.instance.get(args[0]);
     }
-    return this.getRouteTarget().get(...args);
+    const [path, ...handlers] = args;
+    return this.getRouteTarget().get(path, ...handlers);
   }
 
   public post(handler: RequestHandler);
   public post(path: any, handler: RequestHandler);
   public post(...args: any[]) {
-    return this.getRouteTarget().post(...args);
+    const [path, ...handlers] = args;
+    return this.getRouteTarget().post(path, ...handlers);
   }
 
   public put(handler: RequestHandler);
   public put(path: any, handler: RequestHandler);
   public put(...args: any[]) {
-    return this.getRouteTarget().put(...args);
+    const [path, ...handlers] = args;
+    return this.getRouteTarget().put(path, ...handlers);
   }
 
   public delete(handler: RequestHandler);
   public delete(path: any, handler: RequestHandler);
   public delete(...args: any[]) {
-    return this.getRouteTarget().delete(...args);
+    const [path, ...handlers] = args;
+    return this.getRouteTarget().delete(path, ...handlers);
   }
 
   public patch(handler: RequestHandler);
   public patch(path: any, handler: RequestHandler);
   public patch(...args: any[]) {
-    return this.getRouteTarget().patch(...args);
+    const [path, ...handlers] = args;
+    return this.getRouteTarget().patch(path, ...handlers);
   }
 
   public all(handler: RequestHandler);
   public all(path: any, handler: RequestHandler);
   public all(...args: any[]) {
-    return this.getRouteTarget().all(...args);
+    const [path, ...handlers] = args;
+    return this.getRouteTarget().all(path, ...handlers);
   }
 
   public options(handler: RequestHandler);
   public options(path: any, handler: RequestHandler);
   public options(...args: any[]) {
-    return this.getRouteTarget().options(...args);
+    const [path, ...handlers] = args;
+    return this.getRouteTarget().options(path, ...handlers);
   }
 
   public head(handler: RequestHandler);
   public head(path: any, handler: RequestHandler);
   public head(...args: any[]) {
-    return this.getRouteTarget().head(...args);
+    const [path, ...handlers] = args;
+    return this.getRouteTarget().head(path, ...handlers);
   }
 
   public search(handler: RequestHandler);
   public search(path: any, handler: RequestHandler);
   public search(...args: any[]) {
-    return this.getRouteTarget().search(...args);
+    const [path, ...handlers] = args;
+    return this.getRouteTarget().search(path, ...handlers);
   }
 
   public query(handler: RequestHandler);
   public query(path: any, handler: RequestHandler);
   public query(...args: any[]) {
-    return this.getRouteTarget().query(...args);
+    const [path, ...handlers] = args;
+    return this.getRouteTarget().query(path, ...handlers);
   }
 
   public propfind(handler: RequestHandler);
   public propfind(path: any, handler: RequestHandler);
   public propfind(...args: any[]) {
-    return this.getRouteTarget().propfind(...args);
+    const [path, ...handlers] = args;
+    return this.getRouteTarget().propfind(path, ...handlers);
   }
 
   public proppatch(handler: RequestHandler);
   public proppatch(path: any, handler: RequestHandler);
   public proppatch(...args: any[]) {
-    return this.getRouteTarget().proppatch(...args);
+    const [path, ...handlers] = args;
+    return this.getRouteTarget().proppatch(path, ...handlers);
   }
 
   public mkcol(handler: RequestHandler);
   public mkcol(path: any, handler: RequestHandler);
   public mkcol(...args: any[]) {
-    return this.getRouteTarget().mkcol(...args);
+    const [path, ...handlers] = args;
+    return this.getRouteTarget().mkcol(path, ...handlers);
   }
 
   public copy(handler: RequestHandler);
   public copy(path: any, handler: RequestHandler);
   public copy(...args: any[]) {
-    return this.getRouteTarget().copy(...args);
+    const [path, ...handlers] = args;
+    return this.getRouteTarget().copy(path, ...handlers);
   }
 
   public move(handler: RequestHandler);
   public move(path: any, handler: RequestHandler);
   public move(...args: any[]) {
-    return this.getRouteTarget().move(...args);
+    const [path, ...handlers] = args;
+    return this.getRouteTarget().move(path, ...handlers);
   }
 
   public lock(handler: RequestHandler);
   public lock(path: any, handler: RequestHandler);
   public lock(...args: any[]) {
-    return this.getRouteTarget().lock(...args);
+    const [path, ...handlers] = args;
+    return this.getRouteTarget().lock(path, ...handlers);
   }
 
   public unlock(handler: RequestHandler);
   public unlock(path: any, handler: RequestHandler);
   public unlock(...args: any[]) {
-    return this.getRouteTarget().unlock(...args);
+    const [path, ...handlers] = args;
+    return this.getRouteTarget().unlock(path, ...handlers);
   }
 
   public isHeadersSent(response: any): boolean {
@@ -668,8 +718,13 @@ export class ExpressAdapter extends AbstractHttpAdapter<
     this.instance.use(this.lateRouter);
   }
 
-  private getRouteTarget(): express.Application | express.Router {
-    return this.lateRouter ?? this.instance;
+  private getRouteTarget(): ExpressRouteMatcherTarget {
+    // The underlying object is still a real express.Application or
+    // express.Router at runtime; see the `ExpressRouteMatcherTarget`
+    // comment for why it's described with this narrower, per-verb type
+    // rather than `express.Application | express.Router`.
+    return (this.lateRouter ??
+      this.instance) as unknown as ExpressRouteMatcherTarget;
   }
 
   private trackOpenConnections() {
