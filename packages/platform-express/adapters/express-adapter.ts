@@ -25,6 +25,7 @@ import { getBodyParserOptions } from './utils/get-body-parser-options.util.js';
 import {
   type CorsOptions,
   type CorsOptionsDelegate,
+  type RequestHandler,
   type VersionValue,
   isFunction,
   isNil,
@@ -58,6 +59,7 @@ export class ExpressAdapter extends AbstractHttpAdapter<
   private readonly logger = new Logger(ExpressAdapter.name);
   private readonly openConnections = new Set<Duplex>();
   private readonly registeredPrefixes = new Set<string>();
+  private lateRouter?: express.Router;
   private isShuttingDown = false;
   private onRequestHook?: (
     req: express.Request,
@@ -165,6 +167,7 @@ export class ExpressAdapter extends AbstractHttpAdapter<
   }
 
   public setNotFoundHandler(handler: Function, prefix?: string) {
+    this.mountLateRouter();
     if (prefix) {
       this.registeredPrefixes.add(prefix);
       const router = express.Router();
@@ -195,6 +198,112 @@ export class ExpressAdapter extends AbstractHttpAdapter<
         return (handler as any)(req, res, next);
       },
     );
+  }
+
+  public get(handler: RequestHandler);
+  public get(path: any, handler: RequestHandler);
+  public get(...args: any[]) {
+    // `app.get(name)` with a single string reads an application setting.
+    if (args.length === 1 && typeof args[0] === 'string') {
+      return this.instance.get(args[0]);
+    }
+    return this.getRouteTarget().get(...args);
+  }
+
+  public post(handler: RequestHandler);
+  public post(path: any, handler: RequestHandler);
+  public post(...args: any[]) {
+    return this.getRouteTarget().post(...args);
+  }
+
+  public put(handler: RequestHandler);
+  public put(path: any, handler: RequestHandler);
+  public put(...args: any[]) {
+    return this.getRouteTarget().put(...args);
+  }
+
+  public delete(handler: RequestHandler);
+  public delete(path: any, handler: RequestHandler);
+  public delete(...args: any[]) {
+    return this.getRouteTarget().delete(...args);
+  }
+
+  public patch(handler: RequestHandler);
+  public patch(path: any, handler: RequestHandler);
+  public patch(...args: any[]) {
+    return this.getRouteTarget().patch(...args);
+  }
+
+  public all(handler: RequestHandler);
+  public all(path: any, handler: RequestHandler);
+  public all(...args: any[]) {
+    return this.getRouteTarget().all(...args);
+  }
+
+  public options(handler: RequestHandler);
+  public options(path: any, handler: RequestHandler);
+  public options(...args: any[]) {
+    return this.getRouteTarget().options(...args);
+  }
+
+  public head(handler: RequestHandler);
+  public head(path: any, handler: RequestHandler);
+  public head(...args: any[]) {
+    return this.getRouteTarget().head(...args);
+  }
+
+  public search(handler: RequestHandler);
+  public search(path: any, handler: RequestHandler);
+  public search(...args: any[]) {
+    return this.getRouteTarget().search(...args);
+  }
+
+  public query(handler: RequestHandler);
+  public query(path: any, handler: RequestHandler);
+  public query(...args: any[]) {
+    return this.getRouteTarget().query(...args);
+  }
+
+  public propfind(handler: RequestHandler);
+  public propfind(path: any, handler: RequestHandler);
+  public propfind(...args: any[]) {
+    return this.getRouteTarget().propfind(...args);
+  }
+
+  public proppatch(handler: RequestHandler);
+  public proppatch(path: any, handler: RequestHandler);
+  public proppatch(...args: any[]) {
+    return this.getRouteTarget().proppatch(...args);
+  }
+
+  public mkcol(handler: RequestHandler);
+  public mkcol(path: any, handler: RequestHandler);
+  public mkcol(...args: any[]) {
+    return this.getRouteTarget().mkcol(...args);
+  }
+
+  public copy(handler: RequestHandler);
+  public copy(path: any, handler: RequestHandler);
+  public copy(...args: any[]) {
+    return this.getRouteTarget().copy(...args);
+  }
+
+  public move(handler: RequestHandler);
+  public move(path: any, handler: RequestHandler);
+  public move(...args: any[]) {
+    return this.getRouteTarget().move(...args);
+  }
+
+  public lock(handler: RequestHandler);
+  public lock(path: any, handler: RequestHandler);
+  public lock(...args: any[]) {
+    return this.getRouteTarget().lock(...args);
+  }
+
+  public unlock(handler: RequestHandler);
+  public unlock(path: any, handler: RequestHandler);
+  public unlock(...args: any[]) {
+    return this.getRouteTarget().unlock(...args);
   }
 
   public isHeadersSent(response: any): boolean {
@@ -543,6 +652,24 @@ export class ExpressAdapter extends AbstractHttpAdapter<
       default:
         return error;
     }
+  }
+
+  /**
+   * Express matches layers in registration order, so a route added after
+   * the not-found layer would never be reached. Mount an anchor router
+   * once, right before the first not-found layer; every verb registered
+   * afterwards (e.g. via RouterService after bootstrap) goes through it.
+   */
+  private mountLateRouter() {
+    if (this.lateRouter) {
+      return;
+    }
+    this.lateRouter = express.Router();
+    this.instance.use(this.lateRouter);
+  }
+
+  private getRouteTarget(): express.Application | express.Router {
+    return this.lateRouter ?? this.instance;
   }
 
   private trackOpenConnections() {

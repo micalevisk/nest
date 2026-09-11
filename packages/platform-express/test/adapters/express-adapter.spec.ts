@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import express from 'express';
+import request from 'supertest';
 
 describe('ExpressAdapter', () => {
   afterEach(() => vi.restoreAllMocks());
@@ -105,6 +106,42 @@ describe('ExpressAdapter', () => {
       const error = new Error('Test error');
       const result = expressAdapter.mapException(error);
       expect(result).toBe(error);
+    });
+  });
+
+  describe('routes registered after the not-found handler', () => {
+    it('should still be reachable (mounted ahead of the not-found layer)', async () => {
+      const instance = express();
+      const adapter = new ExpressAdapter(instance);
+      adapter.get('/early', (_req, res) => res.send('early'));
+      adapter.setNotFoundHandler((_req, res) => res.status(404).send('nope'));
+      adapter.get('/late', (_req, res) => res.send('late'));
+
+      await request(instance).get('/early').expect(200, 'early');
+      await request(instance).get('/late').expect(200, 'late');
+      await request(instance).get('/missing').expect(404, 'nope');
+    });
+
+    it('should keep prefixed not-found handlers working for late routes', async () => {
+      const instance = express();
+      const adapter = new ExpressAdapter(instance);
+      adapter.setNotFoundHandler(
+        (_req, res) => res.status(404).send('nope'),
+        '/api',
+      );
+      adapter.post('/api/late', (_req, res) => res.send('late'));
+
+      await request(instance).post('/api/late').expect(200, 'late');
+      await request(instance).get('/api/missing').expect(404, 'nope');
+    });
+
+    it('should keep app settings readable through get(name)', () => {
+      const instance = express();
+      const adapter = new ExpressAdapter(instance);
+      instance.set('trust proxy', true);
+      adapter.setNotFoundHandler(() => {});
+
+      expect(adapter.get('trust proxy')).toBe(true);
     });
   });
 });
