@@ -1,4 +1,4 @@
-import { Module, Post, VersioningType } from '@nestjs/common';
+import { Module, Post, RequestMethod, VersioningType } from '@nestjs/common';
 import { MODULE_PATH } from '@nestjs/common/constants.js';
 import { Controller } from '../../../common/decorators/core/controller.decorator.js';
 import { Get } from '../../../common/decorators/http/request-mapping.decorator.js';
@@ -8,6 +8,7 @@ import { Injector } from '../../injector/injector.js';
 import { InstanceWrapper } from '../../injector/instance-wrapper.js';
 import { GraphInspector } from '../../inspector/graph-inspector.js';
 import { SerializedGraph } from '../../inspector/serialized-graph.js';
+import { RouterService } from '../../router/router-service.js';
 import { RoutesResolver } from '../../router/routes-resolver.js';
 import { NoopHttpAdapter } from '../utils/noop-adapter.js';
 
@@ -49,6 +50,9 @@ describe('RoutesResolver', () => {
   let container: NestContainer;
   let modules: Map<string, any>;
   let applicationRef: any;
+  let applicationConfig: ApplicationConfig;
+  let injector: Injector;
+  let graphInspector: GraphInspector;
 
   beforeEach(() => {
     modules = new Map();
@@ -61,6 +65,8 @@ describe('RoutesResolver', () => {
       getModules: () => modules,
       getModuleByKey: (key: string) => modules.get(key),
       getHttpAdapterRef: () => applicationRef,
+      getHttpAdapterHostRef: () => undefined,
+      getInternalCoreModuleRef: () => undefined,
       serializedGraph: new SerializedGraph(),
     } as any;
     router = {
@@ -70,11 +76,14 @@ describe('RoutesResolver', () => {
   });
 
   beforeEach(() => {
+    applicationConfig = new ApplicationConfig();
+    injector = new Injector();
+    graphInspector = new GraphInspector(container);
     routesResolver = new RoutesResolver(
       container,
-      new ApplicationConfig(),
-      new Injector(),
-      new GraphInspector(container),
+      applicationConfig,
+      injector,
+      graphInspector,
     );
     untypedRoutesResolver = routesResolver as any;
   });
@@ -306,6 +315,56 @@ describe('RoutesResolver', () => {
       routesResolver.registerExceptionHandler();
 
       expect(applicationRef.setErrorHandler).toHaveBeenCalled();
+    });
+  });
+
+  describe('dynamic routes', () => {
+    it('should resolve queued RouterService definitions during resolve()', () => {
+      const routerService = new RouterService();
+      routerService.register({
+        method: RequestMethod.GET,
+        path: '/dynamic',
+        handler: () => 'dynamic',
+      });
+      const resolver = new RoutesResolver(
+        container,
+        applicationConfig,
+        injector,
+        graphInspector,
+        routerService,
+      );
+      const resolved: string[] = [];
+
+      resolver.resolve(applicationRef, '/api', {
+        deferRegistration: true,
+        onRouteResolved: route => resolved.push(route.path),
+      });
+
+      expect(resolved).toContain('/api/dynamic');
+    });
+
+    it('should install definitions registered after resolve() immediately', () => {
+      const routerService = new RouterService();
+      const resolver = new RoutesResolver(
+        container,
+        applicationConfig,
+        injector,
+        graphInspector,
+        routerService,
+      );
+      resolver.resolve(applicationRef, '');
+      const registerSpy = vi
+        .spyOn((resolver as any).routerExplorer, 'registerResolvedRoute')
+        .mockImplementation(() => {});
+
+      routerService.register({
+        method: RequestMethod.GET,
+        path: '/late',
+        handler: () => 'late',
+      });
+
+      expect(registerSpy).toHaveBeenCalledTimes(1);
+      expect(registerSpy.mock.calls[0][1]).toMatchObject({ path: '/late' });
     });
   });
 });

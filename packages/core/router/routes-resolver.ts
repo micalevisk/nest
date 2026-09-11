@@ -20,6 +20,7 @@ import { Injector } from '../injector/injector.js';
 import { InstanceWrapper } from '../injector/instance-wrapper.js';
 import { GraphInspector } from '../inspector/graph-inspector.js';
 import { MetadataScanner } from '../metadata-scanner.js';
+import { DynamicRouteRegistrar } from './dynamic-route-registrar.js';
 import { ResolvedRoute } from './interfaces/resolved-route.interface.js';
 import { Resolver } from './interfaces/resolver.interface.js';
 import { RoutePathMetadata } from './interfaces/route-path-metadata.interface.js';
@@ -28,6 +29,7 @@ import { RoutePathFactory } from './route-path-factory.js';
 import { RouterExceptionFilters } from './router-exception-filters.js';
 import { RouterExplorer } from './router-explorer.js';
 import { RouterProxy } from './router-proxy.js';
+import { RouterService } from './router-service.js';
 import { getModulePathMetadata } from './utils/module-path.util.js';
 
 export class RoutesResolver implements Resolver {
@@ -38,12 +40,15 @@ export class RoutesResolver implements Resolver {
   private readonly routePathFactory: RoutePathFactory;
   private readonly routerExceptionsFilter: RouterExceptionFilters;
   private readonly routerExplorer: RouterExplorer;
+  private readonly dynamicRouteRegistrar: DynamicRouteRegistrar;
+  private readonly resolvedRoutes: ResolvedRoute[] = [];
 
   constructor(
     private readonly container: NestContainer,
     private readonly applicationConfig: ApplicationConfig,
     private readonly injector: Injector,
     graphInspector: GraphInspector,
+    private readonly routerService: RouterService = new RouterService(),
   ) {
     const httpAdapterRef = container.getHttpAdapterRef();
     this.routerExceptionsFilter = new RouterExceptionFilters(
@@ -64,6 +69,11 @@ export class RoutesResolver implements Resolver {
       this.routePathFactory,
       graphInspector,
     );
+    this.dynamicRouteRegistrar = new DynamicRouteRegistrar(
+      this.container,
+      this.applicationConfig,
+      this.routerExplorer,
+    );
   }
 
   public resolve<T extends HttpServer>(
@@ -71,6 +81,14 @@ export class RoutesResolver implements Resolver {
     globalPrefix: string,
     options: RouteResolutionOptions = {},
   ) {
+    const trackingOptions: RouteResolutionOptions = {
+      ...options,
+      onRouteResolved: route => {
+        this.resolvedRoutes.push(route);
+        options.onRouteResolved?.(route);
+      },
+    };
+
     const modules = this.container.getModules();
     modules.forEach(({ controllers, metatype }, moduleName) => {
       const modulePath = this.getModulePathMetadata(metatype)!;
@@ -80,9 +98,32 @@ export class RoutesResolver implements Resolver {
         globalPrefix,
         modulePath,
         applicationRef,
-        options,
+        trackingOptions,
       );
     });
+
+    // Dynamic routes queued before bootstrap join the same collect phase,
+    // so the caller's sorting / conflict handling sees them.
+    this.routerService.bindRegistrar(definition =>
+      this.dynamicRouteRegistrar.register(
+        applicationRef,
+        globalPrefix,
+        definition,
+        trackingOptions,
+      ),
+    );
+    // Everything registered from now on is installed immediately. This
+    // rebind is safe because NestApplication#registerRouter() installs the
+    // deferred routes collected above synchronously, right after resolve()
+    // returns, so no user code can call register() in between.
+    this.routerService.bindRegistrar(definition =>
+      this.dynamicRouteRegistrar.registerLive(
+        applicationRef,
+        globalPrefix,
+        definition,
+        this.resolvedRoutes,
+      ),
+    );
   }
 
   public registerResolvedRoute<T extends HttpServer>(

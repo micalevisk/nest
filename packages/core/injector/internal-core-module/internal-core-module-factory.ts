@@ -5,6 +5,7 @@ import { GraphInspector } from '../../inspector/graph-inspector.js';
 import { InitializeOnPreviewAllowlist } from '../../inspector/initialize-on-preview.allowlist.js';
 import { SerializedGraph } from '../../inspector/serialized-graph.js';
 import { ModuleOverride } from '../../interfaces/module-override.interface.js';
+import { RouterService } from '../../router/router-service.js';
 import { DependenciesScanner } from '../../scanner.js';
 import { ModuleCompiler } from '../compiler.js';
 import { NestContainer } from '../container.js';
@@ -69,6 +70,10 @@ export class InternalCoreModuleFactory {
       {
         provide: SerializedGraph,
         useFactory: () => container.serializedGraph,
+      },
+      {
+        provide: RouterService,
+        useFactory: () => new RouterService(),
       },
     ]);
   }

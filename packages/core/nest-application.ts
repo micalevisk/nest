@@ -26,6 +26,7 @@ import { MiddlewareModule } from './middleware/middleware-module.js';
 import { mapToExcludeRoute } from './middleware/utils.js';
 import { NestApplicationContext } from './nest-application-context.js';
 import { Resolver } from './router/interfaces/resolver.interface.js';
+import { RouterService } from './router/router-service.js';
 import { RoutesResolver } from './router/routes-resolver.js';
 import { type NestApplicationOptions, Logger } from '@nestjs/common';
 import {
@@ -82,11 +83,15 @@ export class NestApplication
       instanceDecorator: appOptions.instrument?.instanceDecorator,
     });
     this.middlewareModule = new MiddlewareModule();
+    const routerService = this.container
+      .getInternalCoreModuleRef()
+      ?.providers.get(RouterService)?.instance as RouterService | undefined;
     this.routesResolver = new RoutesResolver(
       this.container,
       this.config,
       this.injector,
       this.graphInspector,
+      routerService,
     );
   }
 
