@@ -29,11 +29,12 @@ import type { NestApplicationOptions } from '@nestjs/common';
  * not declared on this class; implement them when the platform supports
  * them (see {@link HttpServer} for what the core does when they are absent).
  *
- * Keep in mind that the router writes Server-Sent Events directly to the
- * response object as a Node.js writable stream and reads `request.socket`,
- * and that `app.listen()` and the WebSocket adapters use the value returned
- * by {@link AbstractHttpAdapter.getHttpServer} as a Node.js `net.Server`;
- * see the {@link HttpServer} documentation for details.
+ * Keep in mind that the core also reads and writes properties of the request
+ * object (`body`, `params`, `query`, `headers`, ...), that Server-Sent Events
+ * write directly to the Node.js response, and that `app.listen()` and the
+ * WebSocket adapters use the value returned by
+ * {@link AbstractHttpAdapter.getHttpServer} as a Node.js `net.Server`; see the
+ * {@link HttpServer} documentation for details.
  *
  * @typeParam TServer - Type of the native HTTP server stored in `httpServer`
  * (e.g. `http.Server | https.Server`).
@@ -69,8 +70,8 @@ export abstract class AbstractHttpAdapter<
   constructor(protected instance?: any) {}
 
   /**
-   * Asynchronous setup hook awaited at the start of `app.init()`. No-op by
-   * default.
+   * Asynchronous setup hook, awaited by `NestFactory.create()` and again by
+   * `app.init()`, so overrides must be idempotent. No-op by default.
    *
    * @see {@link HttpServer.init}
    */
@@ -422,7 +423,7 @@ export abstract class AbstractHttpAdapter<
   /**
    * Creates the native server and stores it in `httpServer`, honoring the
    * `httpsOptions`, `forceCloseConnections` and `return503OnClosing`
-   * application options. Called by `NestFactory.create()`.
+   * application options. Called once when the application is constructed.
    *
    * @see {@link HttpServer.initHttpServer}
    */
@@ -503,7 +504,8 @@ export abstract class AbstractHttpAdapter<
    */
   abstract setNotFoundHandler(handler: Function, prefix?: string);
   /**
-   * Reports whether response headers have already been flushed.
+   * Reports whether response headers have already been flushed. Must return
+   * synchronously.
    *
    * @see {@link HttpServer.isHeadersSent}
    */

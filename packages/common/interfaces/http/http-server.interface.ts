@@ -9,10 +9,14 @@ import {
  * Shape of the error-layer callback that Nest hands to
  * {@link HttpServer.setErrorHandler}.
  *
- * The adapter must invoke it whenever a route handler or middleware
- * registered through the adapter fails, passing the thrown value first.
- * `next` may be omitted when the underlying framework has no notion of an
- * error-continuation callback.
+ * The adapter invokes it with the error as the first argument. It is the
+ * safety net for errors that never went through Nest: route handlers and
+ * middleware registered by Nest already run their errors through the
+ * exception filters, so this callback receives what is left, such as failures
+ * of middleware registered directly on the framework (e.g. with `app.use()`),
+ * body-parser errors, and values passed to `next(err)`. `next` may be omitted
+ * when the underlying framework has no notion of an error-continuation
+ * callback.
  *
  * @publicApi
  */
@@ -27,10 +31,18 @@ export type ErrorHandler<TRequest = any, TResponse = any> = (
  * Shape of every callback Nest registers through the adapter: route handlers,
  * middleware, and the not-found handler.
  *
- * Nest always invokes these with three arguments. Adapters must forward a
- * working `next` because the host filter (`@Controller({ host })`) and the
- * version filter call it to skip a non-matching handler, and throw
- * `InternalServerErrorException` when it is missing.
+ * The adapter must invoke them as `(req, res, next)`, where `next` continues
+ * with the next matching middleware or route. Nest relies on it: middleware
+ * calls it to continue the chain, routes of a `@Controller({ host })` call it
+ * when the request host does not match (and the core throws
+ * `InternalServerErrorException` when it is missing), and the handlers
+ * returned by {@link HttpServer.applyVersionFilter} typically call it when the
+ * requested version does not match.
+ *
+ * The callbacks may return a promise. For route handlers it settles once
+ * {@link HttpServer.reply} (or `render`/`redirect`) has been called, so an
+ * adapter for a framework that expects the response to be ready when its
+ * handler returns must await it.
  *
  * @publicApi
  */
@@ -53,42 +65,78 @@ export type RequestHandler<TRequest = any, TResponse = any> = (
  *
  * ### Lifecycle
  *
- * 1. `NestFactory.create()` calls {@link HttpServer.initHttpServer} so that
+ * 1. `NestFactory.create()` awaits {@link HttpServer.init} before scanning the
+ *    module graph, then constructs the application, which calls
+ *    {@link HttpServer.initHttpServer} so that
  *    {@link HttpServer.getHttpServer} returns a native server before
- *    `app.init()` runs.
+ *    `app.init()` runs. `TestingModule.createNestApplication()` only
+ *    constructs the application, so it skips that first `init()` call.
  * 2. `app.init()` applies the `cors` option through
- *    {@link HttpServer.enableCors}, then awaits {@link HttpServer.init}, then
+ *    {@link HttpServer.enableCors}, awaits {@link HttpServer.init} again and
  *    calls {@link HttpServer.registerParserMiddleware} (unless
- *    `bodyParser: false`), then registers middleware through
- *    {@link HttpServer.createMiddlewareFactory}, then routes through the
- *    verb methods, and finally {@link HttpServer.setNotFoundHandler} and
- *    {@link HttpServer.setErrorHandler}.
- * 3. `app.listen()` calls {@link HttpServer.listen}.
- * 4. `app.close()` calls {@link HttpServer.beforeClose} before the shutdown
- *    hooks run, and {@link HttpServer.close} after every module has been
- *    disposed.
+ *    `bodyParser: false`). It then connects the WebSocket gateways (which
+ *    share the native server unless they set their own port), registers
+ *    middleware through {@link HttpServer.createMiddlewareFactory} and routes
+ *    through the verb methods, and runs the `OnModuleInit` hooks. Only then
+ *    does it call {@link HttpServer.setNotFoundHandler} and
+ *    {@link HttpServer.setErrorHandler}, before the `OnApplicationBootstrap`
+ *    hooks run.
+ * 3. `app.listen()` runs `app.init()` if that has not happened yet, then calls
+ *    {@link HttpServer.listen}.
+ * 4. `app.close()` awaits {@link HttpServer.beforeClose}, runs the
+ *    `OnModuleDestroy` and `BeforeApplicationShutdown` hooks, closes the
+ *    WebSocket gateways and the microservice clients, awaits
+ *    {@link HttpServer.close}, closes the connected microservices, and
+ *    finally runs the `OnApplicationShutdown` hooks.
  *
  * ### Requirements on the request, response and server objects
  *
- * The core treats `TRequest` and `TResponse` as opaque and always goes
- * through the adapter, with two exceptions that an implementation must be
- * aware of:
+ * Responses are written through the adapter, but the core also accesses the
+ * framework objects directly:
  *
- * - Server-Sent Events (`@Sse()`) write straight to the response object as a
- *   Node.js writable stream (`writeHead`, `write`, `end`, `writableEnded`) and
- *   read `request.socket` to detect client disconnects. `TResponse` must
- *   therefore be, or wrap and expose, a Node.js `ServerResponse`, and
- *   `TRequest` an `IncomingMessage`.
+ * - The route parameter decorators read properties of `TRequest`, so the
+ *   adapter must make sure they are set by the time a route handler runs
+ *   when the framework does not provide them: `body` (`@Body()`), `params`
+ *   (`@Param()`), `query` (`@Query()`), `headers` keyed by lower-case name
+ *   (`@Headers()`), `ip` (`@Ip()`) and, with the `rawBody` option, `rawBody`
+ *   (`@RawBody()`). `session`, `file` and `files` (`@Session()`,
+ *   `@UploadedFile()`, `@UploadedFiles()`) are usually set by third-party
+ *   middleware.
+ * - The core attaches its own properties to `TRequest`: `hosts` for
+ *   `@HostParam()`, the context id of request-scoped providers, and the abort
+ *   controller of `@Sse()` routes, so the request has to be an extensible
+ *   object. Request-scoped providers share one context between middleware
+ *   and the route handler only if both receive the same request object, or if
+ *   the handler's request exposes the middleware's one as `raw`.
+ * - Server-Sent Events (`@Sse()`) write straight to the Node.js response as a
+ *   writable stream (`writeHead`, `write`, `end`, `writableEnded`) and watch
+ *   `request.socket` to detect client disconnects. The core uses `res.raw`
+ *   and `req.raw` when present, and the objects themselves otherwise, so they
+ *   must be or expose a Node.js `ServerResponse` and `IncomingMessage`.
  * - The value returned by {@link HttpServer.getHttpServer} must behave like a
  *   Node.js `net.Server`: `app.listen()` subscribes to its `'error'` event and
  *   reads `address()`, and the WebSocket adapters attach to it.
  *
  * ### Optional members
  *
- * Members marked optional are checked for presence before being called; the
- * fallback behavior is described on each one. Note that `AbstractHttpAdapter`
- * declares several of them abstract, so a class-based adapter has to
- * implement them anyway.
+ * Most members marked optional are checked for presence before being called,
+ * and the fallback behavior is described on each one. The exceptions are
+ * {@link HttpServer.getRequestHostname}, {@link HttpServer.getRequestMethod}
+ * and {@link HttpServer.getRequestUrl}, which the core calls unconditionally
+ * in some code paths, so treat them as required. Note that
+ * `AbstractHttpAdapter` declares several optional members abstract, so a
+ * class-based adapter has to implement them anyway.
+ *
+ * ### Synchronous and asynchronous members
+ *
+ * The core awaits only {@link HttpServer.init},
+ * {@link HttpServer.createMiddlewareFactory}, {@link HttpServer.beforeClose}
+ * and {@link HttpServer.close}, as well as {@link HttpServer.reply} and
+ * {@link HttpServer.render} when the router calls them. Every other member is
+ * called synchronously and a returned promise is ignored. In particular, the
+ * registration methods (`use()`, the verb methods, the parser and CORS
+ * methods, ...) must take effect before they return, or the registration
+ * order the core relies on is lost.
  *
  * @typeParam TRequest - Type of the framework request object handed to
  * handlers and to the `getRequest*` helpers.
@@ -259,6 +307,10 @@ export interface HttpServer<
    * promise in that case. The core additionally subscribes to the `'error'`
    * event of {@link HttpServer.getHttpServer} while binding.
    *
+   * On success, the `app.listen()` promise only resolves if
+   * `getHttpServer().address()` returns a non-null value when the callback
+   * runs; otherwise it stays pending.
+   *
    * @param port Port number, or a string such as a pipe/socket path.
    * @param hostname Optional host to bind to.
    * @param callback Invoked as `(err?)` once listening or on failure.
@@ -266,9 +318,13 @@ export interface HttpServer<
   listen(port: number | string, callback?: () => void): any;
   listen(port: number | string, hostname: string, callback?: () => void): any;
   /**
-   * Sends the final response body. This is the single write path used by the
-   * router for every handler that does not use `@Res()`, and by the built-in
-   * exception filter, so it has to cover the following cases:
+   * Sends the final response body. The router calls it for every handler
+   * that does not take over the response with `@Res()` (without
+   * `passthrough: true`) or `@Next()`, except for `@Render()`, `@Redirect()`
+   * and `@Sse()` handlers, which go through {@link HttpServer.render},
+   * {@link HttpServer.redirect} and the raw response respectively. The
+   * built-in exception filter uses it as well, so it has to cover the
+   * following cases:
    *
    * - `statusCode` provided: apply it before sending.
    * - `body` is `null`/`undefined`: end the response with an empty body.
@@ -280,15 +336,19 @@ export interface HttpServer<
    * - `body` is an object or array: serialize as JSON.
    * - anything else: send `String(body)`.
    *
+   * The router awaits a returned promise, but the exception filter does not,
+   * so an asynchronous implementation must handle its own errors.
+   *
    * @param response Framework response object.
    * @param body Value returned by the route handler (after interceptors).
    * @param statusCode Status to apply, when the router determined one.
    */
   reply(response: any, body: any, statusCode?: number): any;
   /**
-   * Sets the status code without sending the response. Called before the
-   * handler runs with the status derived from `@HttpCode()` or the method
-   * default (`201` for `POST`, `200` otherwise).
+   * Sets the status code without sending the response. Called for every
+   * route once the guards have passed, before the interceptors and the
+   * handler run, with the status derived from `@HttpCode()` or the method
+   * default (`201` for `POST`, `200` otherwise). Not awaited.
    */
   status(response: any, statusCode: number): any;
   /**
@@ -312,12 +372,14 @@ export interface HttpServer<
   /**
    * Reports whether the response headers have already been flushed. The
    * exception layer checks it to decide between {@link HttpServer.reply} and
-   * {@link HttpServer.end}.
+   * {@link HttpServer.end}. It must return a boolean synchronously: the result
+   * is not awaited, and a promise is truthy, so every error response would be
+   * cut short through {@link HttpServer.end}.
    */
   isHeadersSent(response: any): boolean;
   /**
-   * Sets (replaces) a response header; called once per `@Header()` decorator
-   * before the handler runs.
+   * Sets (replaces) a response header; called once per `@Header()` decorator,
+   * right after {@link HttpServer.status}. Not awaited.
    */
   setHeader(response: any, name: string, value: string): any;
   /**
@@ -326,10 +388,15 @@ export interface HttpServer<
    * once, after every route has been registered, and skips it when not
    * implemented.
    *
-   * The handler must be reached by errors thrown from any route or
-   * middleware registered through the adapter. The passed value is first run
-   * through `AbstractHttpAdapter.mapException()` so framework-native errors
-   * can be translated to `HttpException`s.
+   * Errors thrown by the route handlers and middleware that Nest registers
+   * normally don't reach it, because the core already runs them through the
+   * exception filters. The adapter must route every other error to it:
+   * failures of middleware registered directly on the framework (e.g. with
+   * `app.use()`), body-parser errors, and values passed to `next(err)`. The
+   * handler first passes the error to the adapter's `mapException()` so
+   * framework-native errors can be translated to `HttpException`s; that method
+   * is defined by `AbstractHttpAdapter`, so an adapter implementing this
+   * interface directly must provide it too.
    *
    * @param handler The `(err, req, res, next)` callback.
    * @param prefix The global prefix (`app.setGlobalPrefix()`), when set.
@@ -345,7 +412,8 @@ export interface HttpServer<
    * The handler is a {@link RequestHandler} that throws `NotFoundException`
    * through the exception filters, so the adapter only has to make sure it
    * runs after all routes and middleware, and only for requests no route
-   * matched.
+   * matched. It builds its message with {@link HttpServer.getRequestMethod}
+   * and {@link HttpServer.getRequestUrl}, so both must be implemented.
    *
    * @param handler The `(req, res, next)` callback.
    * @param prefix The global prefix (`app.setGlobalPrefix()`), when set.
@@ -382,7 +450,9 @@ export interface HttpServer<
    * `RequestMethod.ALL`, the core already wraps `callback` to skip requests
    * whose {@link HttpServer.getRequestMethod} does not match (treating `HEAD`
    * as `GET`), so a framework that cannot register method-specific middleware
-   * may mount it for every method.
+   * may mount it for every method. Without
+   * {@link HttpServer.getRequestMethod}, that check never matches and such
+   * middleware silently never runs.
    *
    * May return a promise (e.g. when a middleware plugin has to be loaded
    * first); the core awaits it.
@@ -394,20 +464,25 @@ export interface HttpServer<
     | Promise<(path: string, callback: Function) => any>;
   /**
    * Returns the request host name (without port), used to match
-   * `@Controller({ host })`. Required whenever host filtering is used.
+   * `@Controller({ host })`. The core calls it without checking for its
+   * presence, so it is required whenever host filtering is used.
    */
   getRequestHostname?(request: TRequest): string;
   /**
    * Returns the request method as the upper-case verb (`'GET'`, `'HEAD'`,
-   * ...), i.e. a key of the `RequestMethod` enum. Used by the middleware
-   * module to filter by method and by the not-found handler message.
+   * ...), i.e. a key of the `RequestMethod` enum. Effectively required: the
+   * not-found handler and `MiddlewareConsumer.exclude()` call it without
+   * checking for its presence, and without it middleware bound to a specific
+   * method silently never runs.
    */
   getRequestMethod?(request: TRequest): string;
   /**
    * Returns the original request URL, including the query string and
    * independent of any router mount point (Express `req.originalUrl`, not
    * `req.url`). The core strips the query string itself when it needs the
-   * pathname, e.g. to evaluate `MiddlewareConsumer.exclude()`.
+   * pathname, e.g. to evaluate `MiddlewareConsumer.exclude()`. Effectively
+   * required: the not-found handler and `exclude()` call it without checking
+   * for its presence.
    */
   getRequestUrl?(request: TRequest): string;
   /**
@@ -443,7 +518,9 @@ export interface HttpServer<
   getHttpServer(): any;
   /**
    * Creates the native HTTP(S) server so that {@link HttpServer.getHttpServer}
-   * can return it. Called by `NestFactory.create()` before `app.init()`.
+   * can return it. Called once, synchronously, when the application is
+   * constructed (by `NestFactory.create()` or
+   * `TestingModule.createNestApplication()`), before `app.init()`.
    *
    * The adapter is responsible for honoring the relevant application
    * options: `httpsOptions` (create an HTTPS server),
@@ -454,15 +531,19 @@ export interface HttpServer<
   initHttpServer(options: NestApplicationOptions): void;
   /**
    * Stops the server and releases its resources. Called by `app.close()`
-   * after the WebSocket and microservice modules have been closed. May return
-   * a promise; the core awaits it.
+   * after the `OnModuleDestroy` and `BeforeApplicationShutdown` hooks and
+   * after the WebSocket gateways and microservice clients have been closed,
+   * but before connected microservices are closed and the
+   * `OnApplicationShutdown` hooks run. May return a promise; the core awaits
+   * it.
    */
   close(): any;
   /**
-   * Called by `app.close()` **before** the shutdown hooks (`OnModuleDestroy`,
-   * `BeforeApplicationShutdown`, ...) run, so the adapter can flip into a
-   * "shutting down" state, e.g. start answering `503` when
-   * `return503OnClosing` is enabled. May return a promise.
+   * Called by `app.close()` **before** any shutdown hook (`OnModuleDestroy`,
+   * `BeforeApplicationShutdown`, `OnApplicationShutdown`) runs, so the
+   * adapter can flip into a "shutting down" state, e.g. start answering `503`
+   * when `return503OnClosing` is enabled. May return a promise; the core
+   * awaits it.
    */
   beforeClose?(): any;
   /**
@@ -474,10 +555,14 @@ export interface HttpServer<
    */
   getType(): string;
   /**
-   * Asynchronous setup hook. Awaited at the start of `app.init()`, after the
-   * `cors` option has been applied and before the parsers, middleware and
-   * routes are registered. Use it for work that cannot happen in the
-   * constructor, such as loading a plugin.
+   * Asynchronous setup hook for work that cannot happen in the constructor,
+   * such as loading a plugin. It can run twice: `NestFactory.create()` awaits
+   * it before the module graph is scanned (and before
+   * {@link HttpServer.initHttpServer}), and `app.init()` awaits it again after
+   * the `cors` option has been applied and before the parsers, middleware and
+   * routes are registered. `TestingModule.createNestApplication()` only
+   * triggers the second call. Implementations must therefore be idempotent,
+   * e.g. by guarding the work with a flag as `FastifyAdapter` does.
    */
   init?(): Promise<void>;
   /**
