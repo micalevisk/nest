@@ -1,0 +1,26 @@
+packages/core/injector/lazy-module-loader/lazy-module-loader.ts
+  s_4fe86ddc9ca824::t_9c03133abbe3bc 107
+packages/core/test/injector/lazy-module-loader/lazy-module-loader.spec.ts
+  s_4fe86ddc9ca824::t_0a513efa21b8c5 3,15,898-961
+  s_4fe86ddc9ca824::t_3865c5bf727f8e 962-963
+packages/core/scanner.ts
+  s_4fe86ddc9ca824::t_0a513efa21b8c5 715,717-719,723,726
+packages/core/test/scanner.spec.ts
+  s_4fe86ddc9ca824::t_0a513efa21b8c5 1019-1052
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "9e9d0d98a1f507d436c4ea0270ccc8160bb74014",
+  "prompts": {},
+  "sessions": {
+    "s_4fe86ddc9ca824": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9ac05dcd-2757-491d-8a9c-07049f75fc39",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Micael Levi Lima Cavalcante <micalevisk@gmail.com>"
+    }
+  }
+}
