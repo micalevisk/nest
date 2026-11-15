@@ -1,0 +1,31 @@
+packages/core/test/helpers/context-utils.spec.ts
+  s_4fe86ddc9ca824::t_f4bb25dc158910 341-365
+packages/core/guards/guards-consumer.ts
+  s_4fe86ddc9ca824::t_f4bb25dc158910 3,5,45
+packages/core/test/interceptors/interceptors-consumer.spec.ts
+  s_4fe86ddc9ca824::t_f4bb25dc158910 18,187-206
+  s_4fe86ddc9ca824::t_6b913478a2c7c3 207
+packages/core/interceptors/interceptors-consumer.ts
+  s_4fe86ddc9ca824::t_f4bb25dc158910 5,46
+packages/core/helpers/context-utils.ts
+  s_4fe86ddc9ca824::t_f4bb25dc158910 177
+packages/core/test/guards/guards-consumer.spec.ts
+  s_4fe86ddc9ca824::t_f4bb25dc158910 2,118-145,147
+  s_4fe86ddc9ca824::t_9a01bd09bbafe2 146,148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "4db77cefcbb845658e2bd7a7390fe2712b45bfd7",
+  "prompts": {},
+  "sessions": {
+    "s_4fe86ddc9ca824": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9ac05dcd-2757-491d-8a9c-07049f75fc39",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Micael Levi Lima Cavalcante <micalevisk@gmail.com>"
+    }
+  }
+}
