@@ -1,0 +1,26 @@
+packages/core/test/injector/injector.spec.ts
+  s_4fe86ddc9ca824::t_cac591b73797e2 336-338,346-349,360-363,370-373,380-383
+  s_4fe86ddc9ca824::t_ec0f438e018a79 331-335,339-345,350-359,364-369,374-379,384-387
+packages/core/errors/messages.ts
+  s_4fe86ddc9ca824::t_583063544fdf5f 155-167
+packages/core/injector/injector.ts
+  s_4fe86ddc9ca824::t_c840683550a605 31-34
+  s_4fe86ddc9ca824::t_1c012d814b8754 130
+  s_4fe86ddc9ca824::t_995113dc50b55d 2040-2042,2050,2055-2072
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "4889e38e5fa9c47aca2bfa693f0af071a79bfc85",
+  "prompts": {},
+  "sessions": {
+    "s_4fe86ddc9ca824": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9ac05dcd-2757-491d-8a9c-07049f75fc39",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Micael Levi Lima Cavalcante <micalevisk@gmail.com>"
+    }
+  }
+}
