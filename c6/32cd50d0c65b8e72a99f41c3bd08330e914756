@@ -1,0 +1,19 @@
+packages/core/scanner.ts
+  s_523b89d1f2f966::t_1f300a5d899bcd 725-731
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "c632cd50d0c65b8e72a99f41c3bd08330e914756",
+  "prompts": {},
+  "sessions": {
+    "s_523b89d1f2f966": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcc1a364-c623-4602-8e35-6a9ded0fa2ad",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Micael Levi Lima Cavalcante <micalevisk@gmail.com>"
+    }
+  }
+}
