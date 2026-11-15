@@ -1,0 +1,21 @@
+packages/core/scanner.ts
+  s_db589ae3fb6270::t_6ff3e755a96799 248-264
+packages/core/test/injector/lazy-module-loader/lazy-module-loader.spec.ts
+  s_db589ae3fb6270::t_1cdd176a5a2d98 964-1002
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "64f256c6946eb4d35cffb2736f2267d3e156eef0",
+  "prompts": {},
+  "sessions": {
+    "s_db589ae3fb6270": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_db589ae3fb6270",
+        "model": "unknown"
+      },
+      "human_author": "Micael Levi Lima Cavalcante <micalevisk@gmail.com>"
+    }
+  }
+}
